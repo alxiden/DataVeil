@@ -11,6 +11,7 @@ from PyPDF2 import PdfReader, PdfWriter
 import extract_msg
 import win32com.client
 import fitz
+import re
 
 
 class DataVeil:
@@ -35,8 +36,21 @@ class DataVeil:
         self.strings_entry = tk.Entry(root, width=50)
         self.strings_entry.grid(row=2, column=1)
 
+        self.redact_emails_var = tk.BooleanVar()
+        self.redact_money_var = tk.BooleanVar()
+        self.redact_links_var = tk.BooleanVar()
+
+        self.redact_emails_checkbox = tk.Checkbutton(root, text="Redact emails", variable=self.redact_emails_var)
+        self.redact_emails_checkbox.grid(row=3, column=0, sticky='w')
+
+        self.redact_money_checkbox = tk.Checkbutton(root, text="Redact Money", variable=self.redact_money_var)
+        self.redact_money_checkbox.grid(row=3, column=1, sticky='w')
+
+        self.redact_links_checkbox = tk.Checkbutton(root, text="Redact Links", variable=self.redact_links_var)
+        self.redact_links_checkbox.grid(row=4, column=0, sticky='w')
+
         self.redact_button = tk.Button(root, text="Redact", command=self.files)
-        self.redact_button.grid(row=3, column=0, columnspan=2)
+        self.redact_button.grid(row=5, column=0, columnspan=2)
 
     def files(self):
         folder = self.folder_entry.get()
@@ -77,6 +91,7 @@ class DataVeil:
 
     def fileTypes(self, files, folder):
         for file in files:
+            print(f"Processing file: {file}")
             file_path = os.path.join(folder, file)
             #print(file_path)
             if file.endswith('.txt'):
@@ -151,12 +166,26 @@ class DataVeil:
     def redact_docx(self, file):
         #print(file)
         strings_to_redact = self.string_storage
+        redact_emails = self.redact_emails_var.get()
+        redact_money = self.redact_money_var.get()
+        email_pattern = r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
+        money_pattern = r"\b\$?\d{1,3}(,\d{3})*(\.\d{2})?\b|\b\d+\.\d{2}\b|\b£\d{1,3}(,\d{3})*(\.\d{2})?\b|\b€\d{1,3}(,\d{3})*(\.\d{2})?\b"
+        link_pattern = r"https?://[^\s]+"
         try:
             doc = Document(file)
             for paragraph in doc.paragraphs:
+                text = paragraph.text
+                # Redact custom strings
                 for string in strings_to_redact:
-                    if string in paragraph.text:
-                        paragraph.text = paragraph.text.replace(string, "Redacted")
+                    if string in text:
+                        text = text.replace(string, "Redacted")
+                if redact_emails:
+                    text = re.sub(email_pattern, "Redacted", text)
+                if redact_money:
+                    text = re.sub(money_pattern, "Redacted", text)
+                if self.redact_links_var.get():
+                    text = re.sub(link_pattern, "Redacted", text)
+                paragraph.text = text
             doc.save(file)
         except ValueError as ve:
             self.show_error_popup(ve)
