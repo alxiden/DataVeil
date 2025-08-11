@@ -209,30 +209,39 @@ class DataVeil:
         except Exception as e:
             self.show_error_popup(f"An error occurred while processing the file '{file}': {e}")
     
-    def convert_msg_to_docx(self, msg_file, docx_file):
+    def convert_msg_to_docx(self, msg_file, redacted_folder):
+        def sanitize(s):
+            # Remove control characters and ensure XML compatibility
+            return ''.join(c for c in str(s) if c.isprintable() and ord(c) not in range(0,32))
+
         msg = extract_msg.Message(msg_file)
+        # Format date for filename (remove invalid chars)
+        date_str = sanitize(msg.date).replace(':', '-').replace('/', '-').replace(' ', '_')
+        sender_str = re.sub(r'[^a-zA-Z0-9]', '_', sanitize(msg.sender))
+        docx_filename = f"{date_str}{sender_str}.docx"
+        docx_file = os.path.join(redacted_folder, docx_filename)
         doc = Document()
         doc.add_heading('Email Information', level=1)
-        doc.add_paragraph(f"Subject: {msg.subject}")
-        doc.add_paragraph(f"From: {msg.sender}")
-        doc.add_paragraph(f"To: {msg.to}")
-        doc.add_paragraph(f"Date: {msg.date}")
+        doc.add_paragraph(f"Subject: {sanitize(msg.subject)}")
+        doc.add_paragraph(f"From: {sanitize(msg.sender)}")
+        doc.add_paragraph(f"To: {sanitize(msg.to)}")
+        doc.add_paragraph(f"Date: {sanitize(msg.date)}")
         doc.add_heading('Body', level=1)
-        doc.add_paragraph(msg.body)
+        doc.add_paragraph(sanitize(msg.body))
         doc.save(docx_file)
         msg.close()
         return docx_file
     
     def redact_msg(self, file):
-        #print(file)
-        docx_file = file.replace('.msg', '.docx')
+        # Save redacted emails in the Redacted folder
+        redacted_folder = os.path.dirname(file)
         try:
-            self.convert_msg_to_docx(file, docx_file)
+            docx_file = self.convert_msg_to_docx(file, redacted_folder)
             self.redact_docx(docx_file)
             time.sleep(2)
             os.remove(file)
         except Exception as e:
-           self.show_error_popup(f"An error occurred while processing the file '{file}': {e}")
+            self.show_error_popup(f"An error occurred while processing the file '{file}': {e}")
 
 
 def main():
