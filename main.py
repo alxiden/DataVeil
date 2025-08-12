@@ -12,6 +12,7 @@ import extract_msg
 import win32com.client
 import fitz
 import re
+from html.parser import HTMLParser
 
 
 class DataVeil:
@@ -164,13 +165,16 @@ class DataVeil:
             self.show_error_popup(f"An error occurred while processing the file '{file}': {e}")
     
     def redact_docx(self, file):
-        #print(file)
+        # print(file)
         strings_to_redact = self.string_storage
         redact_emails = self.redact_emails_var.get()
         redact_money = self.redact_money_var.get()
         email_pattern = r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"
-        money_pattern = r"\b\$?\d{1,3}(,\d{3})*(\.\d{2})?\b|\b\d+\.\d{2}\b|\b£\d{1,3}(,\d{3})*(\.\d{2})?\b|\b€\d{1,3}(,\d{3})*(\.\d{2})?\b"
+        money_pattern = r"£\d+"
+        money_pattern_2 = r"£\d+\.\d{2}"
+        money_pattern_3 = r"\b\d+[Kk]"
         link_pattern = r"https?://[^\s]+"
+        probate_pattern = r"\d+\.\d{3}"
         try:
             doc = Document(file)
             for paragraph in doc.paragraphs:
@@ -183,8 +187,12 @@ class DataVeil:
                     text = re.sub(email_pattern, "Redacted", text)
                 if redact_money:
                     text = re.sub(money_pattern, "Redacted", text)
+                    text = re.sub(money_pattern_2, "Redacted", text)
+                    text = re.sub(money_pattern_3, "Redacted", text)
                 if self.redact_links_var.get():
                     text = re.sub(link_pattern, "Redacted", text)
+                if re.search(probate_pattern, text):
+                    text = re.sub(probate_pattern, "Redacted", text)
                 paragraph.text = text
             doc.save(file)
         except ValueError as ve:
@@ -210,11 +218,21 @@ class DataVeil:
             self.show_error_popup(f"An error occurred while processing the file '{file}': {e}")
     
     def convert_msg_to_docx(self, msg_file, redacted_folder):
+        
+        class HTMLTextExtractor(HTMLParser):
+            def __init__(self):
+                super().__init__()
+                self.result = []
+            def handle_data(self, d):
+                self.result.append(d)
+            def get_text(self):
+                return ''.join(self.result)
         def sanitize(s):
             # Remove control characters and ensure XML compatibility
             return ''.join(c for c in str(s) if c.isprintable() and ord(c) not in range(0,32))
 
         msg = extract_msg.Message(msg_file)
+        # print(dir(msg))  # Debugging line to check available attributes
         # Format date for filename (remove invalid chars)
         date_str = sanitize(msg.date).replace(':', '-').replace('/', '-').replace(' ', '_')
         sender_str = re.sub(r'[^a-zA-Z0-9]', '_', sanitize(msg.sender))
@@ -227,7 +245,30 @@ class DataVeil:
         doc.add_paragraph(f"To: {sanitize(msg.to)}")
         doc.add_paragraph(f"Date: {sanitize(msg.date)}")
         doc.add_heading('Body', level=1)
-        doc.add_paragraph(sanitize(msg.body))
+        def ensure_str(val):
+            if isinstance(val, bytes):
+                try:
+                    return val.decode('utf-8')
+                except Exception:
+                    return val.decode('latin1', errors='ignore')
+            return str(val)
+
+        body_content = sanitize(ensure_str(msg.body))
+        if body_content == "None":
+            # Try to get the full message body or html body if available
+            if hasattr(msg, 'messageBody') and msg.messageBody:
+                body_content = sanitize(ensure_str(msg.messageBody))
+            elif hasattr(msg, 'htmlBody') and msg.htmlBody:
+                # Remove <style> and <head> sections from HTML
+                html = ensure_str(msg.htmlBody)
+                html = re.sub(r'<style.*?>.*?</style>', '', html, flags=re.DOTALL|re.IGNORECASE)
+                html = re.sub(r'<head.*?>.*?</head>', '', html, flags=re.DOTALL|re.IGNORECASE)
+                parser = HTMLTextExtractor()
+                parser.feed(html)
+                text = parser.get_text()
+            else:
+                body_content = "No body content found."
+        doc.add_paragraph(body_content)
         doc.save(docx_file)
         msg.close()
         return docx_file
