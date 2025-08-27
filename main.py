@@ -175,6 +175,7 @@ class DataVeil:
         money_pattern_3 = r"\b\d+[Kk]"
         link_pattern = r"https?://[^\s]+"
         probate_pattern = r"\d+\.\d{3}"
+        exception_email = "vicki.wheelhouse@kctrust.co.uk"
         try:
             doc = Document(file)
             for paragraph in doc.paragraphs:
@@ -184,7 +185,11 @@ class DataVeil:
                     if string in text:
                         text = text.replace(string, "Redacted")
                 if redact_emails:
-                    text = re.sub(email_pattern, "Redacted", text)
+                    # Find all emails
+                    found_emails = re.findall(email_pattern, text)
+                    for email in found_emails:
+                        if email.lower() != exception_email:
+                            text = text.replace(email, "Redacted")
                 if redact_money:
                     text = re.sub(money_pattern, "Redacted", text)
                     text = re.sub(money_pattern_2, "Redacted", text)
