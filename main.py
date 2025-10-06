@@ -248,6 +248,7 @@ class DataVeil:
         doc.add_paragraph(f"Subject: {sanitize(msg.subject)}")
         doc.add_paragraph(f"From: {sanitize(msg.sender)}")
         doc.add_paragraph(f"To: {sanitize(msg.to)}")
+        doc.add_paragraph(f"CC: {sanitize(msg.cc)}")
         doc.add_paragraph(f"Date: {sanitize(msg.date)}")
         doc.add_heading('Body', level=1)
         def ensure_str(val):
